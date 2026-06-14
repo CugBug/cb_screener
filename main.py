@@ -4,6 +4,7 @@
 """
 
 import argparse
+import os
 import sys
 import time
 import traceback
@@ -16,10 +17,13 @@ from data_fetcher import (
     fetch_financial_abstract,
     fetch_debt_report,
     fetch_pledge_data,
+    fetch_bond_value_analysis,
+    fetch_bond_summary_sina,
 )
 from rough_filter import rough_filter
 from exclusion_check import check_exclusions
 from financial_scorer import score_financials
+from investment_scorer import score_investment
 from report_generator import generate_report
 
 
@@ -84,12 +88,9 @@ def _run_safely(func, args, mode_name):
 
 def _save_partial_result(df: pd.DataFrame, tag: str = "partial"):
     """保存中间结果到 output/ 目录"""
-    from report_generator import generate_report
-
     try:
         suffix = datetime.now().strftime("%Y%m%d_%H%M%S")
         from config import OUTPUT_DIR
-        import os
         os.makedirs(OUTPUT_DIR, exist_ok=True)
         filepath = os.path.join(OUTPUT_DIR, f"中间结果_{tag}_{suffix}.xlsx")
         df.to_excel(filepath, index=False, engine="openpyxl")
@@ -152,6 +153,32 @@ def _run_full_mode(args):
         print(f"    质押数据获取失败: {e}，继续流程")
         pledge_data = None
 
+    # 获取候选池每只转债的纯债价值
+    bond_codes = candidates["转债代码"].dropna().astype(str).tolist()
+    print(f"\n  [数据] 获取 {len(bond_codes)} 只转债纯债价值...")
+    debt_value_map = {}
+    for i, code in enumerate(bond_codes):
+        print(f"  [{i+1}/{len(bond_codes)}] 获取 {code} 纯债价值...")
+        val = fetch_bond_value_analysis(code)
+        if val is not None:
+            debt_value_map[code] = val
+    candidates["纯债价值"] = candidates["转债代码"].astype(str).map(debt_value_map)
+    matched = candidates["纯债价值"].notna().sum()
+    print(f"  [数据] 纯债价值匹配: {matched}/{len(candidates)} 只\n")
+
+    # 获取候选池每只转债的精确剩余年限 (新浪)
+    print(f"  [数据] 获取 {len(bond_codes)} 只转债剩余年限...")
+    remain_map = {}
+    for i, code in enumerate(bond_codes):
+        print(f"  [{i+1}/{len(bond_codes)}] 获取 {code} 剩余年限...")
+        val = fetch_bond_summary_sina(code)
+        if val is not None:
+            remain_map[code] = val
+    mask = candidates["转债代码"].astype(str).map(remain_map).notna()
+    overwritten = mask.sum()
+    candidates.loc[mask, "剩余年限"] = candidates.loc[mask, "转债代码"].astype(str).map(remain_map)
+    print(f"  [数据] 剩余年限匹配: {overwritten}/{len(candidates)} 只\n")
+
     # Step 2: 排除项检查
     try:
         candidates = check_exclusions(candidates, financial_data)
@@ -166,6 +193,13 @@ def _run_full_mode(args):
     except Exception as e:
         print(f"    财务评分失败: {e}")
         _save_partial_result(candidates, "评分前")
+        raise
+
+    # Step 3.5: 投资推荐评分
+    try:
+        candidates = score_investment(candidates)
+    except Exception as e:
+        print(f"    投资推荐评分失败: {e}")
         raise
 
     # Step 4: 报告输出
@@ -223,6 +257,28 @@ def _run_detail_mode(args):
         print(f"    质押数据获取失败: {e}，继续流程")
         pledge_data = None
 
+    # 纯债价值
+    bond_codes = candidates["转债代码"].dropna().astype(str).tolist()
+    print(f"\n  [数据] 获取 {len(bond_codes)} 只转债纯债价值...")
+    debt_value_map = {}
+    for i, code in enumerate(bond_codes):
+        print(f"  [{i+1}/{len(bond_codes)}] 获取 {code} 纯债价值...")
+        val = fetch_bond_value_analysis(code)
+        if val is not None:
+            debt_value_map[code] = val
+    candidates["纯债价值"] = candidates["转债代码"].astype(str).map(debt_value_map)
+
+    # 精确剩余年限 (新浪)
+    print(f"  [数据] 获取 {len(bond_codes)} 只转债剩余年限...")
+    remain_map = {}
+    for i, code in enumerate(bond_codes):
+        print(f"  [{i+1}/{len(bond_codes)}] 获取 {code} 剩余年限...")
+        val = fetch_bond_summary_sina(code)
+        if val is not None:
+            remain_map[code] = val
+    mask = candidates["转债代码"].astype(str).map(remain_map).notna()
+    candidates.loc[mask, "剩余年限"] = candidates.loc[mask, "转债代码"].astype(str).map(remain_map)
+
     try:
         candidates = check_exclusions(candidates, financial_data)
     except Exception as e:
@@ -235,6 +291,12 @@ def _run_detail_mode(args):
     except Exception as e:
         print(f"    财务评分失败: {e}")
         _save_partial_result(candidates, "评分前")
+        raise
+
+    try:
+        candidates = score_investment(candidates)
+    except Exception as e:
+        print(f"    投资推荐评分失败: {e}")
         raise
 
     generate_report(candidates, output_format="both")

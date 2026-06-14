@@ -77,6 +77,60 @@ RISK_LEVELS = [
 ]
 
 # ═══════════════════════════════════════════════
+# 投资推荐分参数
+# ═══════════════════════════════════════════════
+
+# 估值 vs 质量权重
+INVEST_WEIGHT_VALUATION = 0.5
+INVEST_WEIGHT_QUALITY = 0.5
+
+# 估值子项: 纯债价值比 (现价/纯债价值)
+VALUATION_DEBT_VALUE_RATIO_WEIGHT = 0.60
+VALUATION_PREMIUM_WEIGHT = 0.40
+
+# 纯债价值比阈值
+DEBT_VALUE_RATIO_SAFE = 0.85
+DEBT_VALUE_RATIO_FAIR = 0.95
+
+# 溢价率估值阈值
+PREMIUM_VALUATION_LOW = 20.0
+PREMIUM_VALUATION_MID = 50.0
+PREMIUM_VALUATION_HIGH = 100.0
+
+# 质量子项: 财务总分 + 评级
+QUALITY_FINANCIAL_SCORE_WEIGHT = 0.70
+QUALITY_RATING_WEIGHT = 0.30
+
+# 评级加分 (对应质量分里的满分30)
+RATING_BONUS = {
+    "AAA": 30, "AA+": 24, "AA": 18, "AA-": 12, "A+": 6, "A": 0,
+}
+
+# 排除项扣分
+EXCLUSION_PENALTY_1 = 25
+
+# 剩余年限闸门
+MIN_REMAINING_YEARS = 0.33
+
+# 推荐等级
+INVEST_LEVELS = [
+    (80, 100, "★★★★★", "强烈推荐"),
+    (60, 80, "★★★★", "推荐关注"),
+    (40, 60, "★★★", "可考虑"),
+    (20, 40, "★★", "暂不考虑"),
+    (0, 20, "★", "回避"),
+]
+
+# ═══════════════════════════════════════════════
+# 评级顺序 (统一管理，避免多模块重复定义)
+# ═══════════════════════════════════════════════
+
+RATING_ORDER = [
+    "C", "CC", "CCC", "B", "B+", "BB-", "BB", "BB+",
+    "BBB-", "BBB", "BBB+", "A-", "A", "A+", "AA-", "AA", "AA+", "AAA",
+]
+
+# ═══════════════════════════════════════════════
 # 输出配置
 # ═══════════════════════════════════════════════
 

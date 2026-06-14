@@ -13,6 +13,7 @@ from config import (
     NEAR_EXPIRY_YEARS,
     PREMIUM_HIGH,
     RATING_EXCLUDE_BELOW,
+    RATING_ORDER,
 )
 
 
@@ -174,13 +175,10 @@ def _check_rating(row, idx, df, rating_col):
         return
 
     rating = str(row[rating_col]).strip().upper()
-    rating_order = ["C", "CC", "CCC", "B", "B+", "BB-", "BB", "BB+", "BBB-", "BBB", "BBB+",
-                    "A-", "A", "A+", "AA-", "AA", "AA+", "AAA"]
-
     min_rating = RATING_EXCLUDE_BELOW.upper()
 
-    if rating in rating_order and min_rating in rating_order:
-        if rating_order.index(rating) < rating_order.index(min_rating):
+    if rating in RATING_ORDER and min_rating in RATING_ORDER:
+        if RATING_ORDER.index(rating) < RATING_ORDER.index(min_rating):
             df.at[idx, "排除_评级不足"] = True
             df.at[idx, "排除_评级不足_详情"] = f"评级 {rating} < {min_rating}"
         else:

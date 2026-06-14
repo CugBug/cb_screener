@@ -11,6 +11,7 @@ from config import (
     ROUGH_RATING_MIN,
     PREMIUM_WARN_THRESHOLD,
     PREMIUM_WARN_PRICE_MIN,
+    RATING_ORDER,
 )
 
 
@@ -74,19 +75,6 @@ def rough_filter(df: pd.DataFrame) -> pd.DataFrame:
     return candidates
 
 
-def _find_column(df: pd.DataFrame, candidates: list) -> str | None:
-    """查找存在的列名"""
-    for col in candidates:
-        if col in df.columns:
-            return col
-    # 模糊匹配
-    for col in candidates:
-        for df_col in df.columns:
-            if col in df_col:
-                return df_col
-    return None
-
-
 def _rating_ok(rating: str) -> bool:
     """判断评级是否通过"""
     if pd.isna(rating):
@@ -94,14 +82,11 @@ def _rating_ok(rating: str) -> bool:
 
     rating = str(rating).strip().upper()
 
-    rating_order = ["C", "CC", "CCC", "B", "B+", "BB-", "BB", "BB+", "BBB-", "BBB", "BBB+",
-                    "A-", "A", "A+", "AA-", "AA", "AA+", "AAA"]
-
-    if rating not in rating_order:
+    if rating not in RATING_ORDER:
         return True
 
     min_rating = ROUGH_RATING_MIN.upper()
-    if min_rating not in rating_order:
+    if min_rating not in RATING_ORDER:
         return True
 
-    return rating_order.index(rating) >= rating_order.index(min_rating)
+    return RATING_ORDER.index(rating) >= RATING_ORDER.index(min_rating)

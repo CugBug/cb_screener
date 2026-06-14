@@ -38,7 +38,11 @@ def generate_report(df: pd.DataFrame, output_format: str = "excel") -> str:
 def _print_console_report(df: pd.DataFrame):
     """控制台输出报告"""
 
-    sort_col = "财务总分" if "财务总分" in df.columns else None
+    sort_col = None
+    if "推荐分" in df.columns:
+        sort_col = "推荐分"
+    elif "财务总分" in df.columns:
+        sort_col = "财务总分"
     if sort_col:
         df_sorted = df.sort_values(by=sort_col, ascending=False, na_position="last")
     else:
@@ -50,18 +54,18 @@ def _print_console_report(df: pd.DataFrame):
     print("=" * 80)
 
     # 概览表
-    has_ytm = "到期收益率" in df.columns and df["到期收益率"].notna().any()
-    if has_ytm:
-        print(f"\n{'转债名称':<12} {'现价':>8} {'溢价率':>8} {'到期收益率':>8} {'评级':>6} {'排除项':>6} {'评分':>6} {'风险等级':<10}")
-        print("-" * 86)
+    has_rcmd = "推荐分" in df.columns and df["推荐分"].notna().any()
+
+    if has_rcmd:
+        print(f"\n{'转债名称':<12} {'现价':>8} {'纯债价值':>8} {'溢价率':>8} {'评级':>6} {'排除':>4} {'财务':>6} {'推荐分':>6} {'推荐等级':<14}")
+        print("-" * 98)
     else:
-        print(f"\n{'转债名称':<12} {'现价':>8} {'溢价率':>8} {'评级':>6} {'排除项':>6} {'评分':>6} {'风险等级':<10}")
+        print(f"\n{'转债名称':<12} {'现价':>8} {'溢价率':>8} {'评级':>6} {'排除':>4} {'财务':>6} {'风险等级':<10}")
         print("-" * 70)
 
     price_col = "现价" if "现价" in df.columns else None
     premium_col = "溢价率" if "溢价率" in df.columns else None
     rating_col = "评级" if "评级" in df.columns else None
-    ytm_col = "到期收益率" if has_ytm else None
 
     for _, row in df_sorted.iterrows():
         name = str(row.get("转债名称", row.get("转债代码", "?")))[:10]
@@ -72,10 +76,12 @@ def _print_console_report(df: pd.DataFrame):
         score = row.get("财务总分", 0)
         level = row.get("风险等级", "?")
 
-        if has_ytm:
-            ytm_val = row.get("到期收益率")
-            ytm = f"{ytm_val:.1f}%" if pd.notna(ytm_val) else "N/A"
-            print(f"{name:<12} {price:>8} {premium:>8} {ytm:>8} {rating:>6} {excluded:>6} {score:>6.1f} {level:<10}")
+        if has_rcmd:
+            debt_val = row.get("纯债价值")
+            debt = f"{debt_val:.1f}" if pd.notna(debt_val) else "  N/A"
+            rcmd = row.get("推荐分", 0)
+            rcmd_level = str(row.get("推荐等级", "?"))[:14]
+            print(f"{name:<12} {price:>8} {debt:>8} {premium:>8} {rating:>6} {excluded:>4} {score:>6.1f} {rcmd:>6.1f} {rcmd_level:<14}")
         else:
             print(f"{name:<12} {price:>8} {premium:>8} {rating:>6} {excluded:>6} {score:>6.1f} {level:<10}")
 
@@ -155,6 +161,14 @@ def _print_bond_detail(row, price_col, premium_col, rating_col):
     if "风险等级" in row.index and row.get("风险等级"):
         print(f"  【综合判定】{row.get('风险等级', '?')}  (评分: {row.get('财务总分', 0):.1f})")
 
+    if "推荐分" in row.index and pd.notna(row.get("推荐分")):
+        rcmd = row.get("推荐分", 0)
+        rcmd_level = row.get("推荐等级", "?")
+        rcmd_reason = row.get("推荐原因", "")
+        print(f"  【投资推荐】{rcmd_level}  (推荐分: {rcmd:.1f})")
+        if rcmd_reason:
+            print(f"    原因: {rcmd_reason}")
+
 
 def _print_indicator(name, row):
     detail = row.get(f"详情_{name}", "无数据")
@@ -199,7 +213,8 @@ def _write_overview_sheet(df, writer):
     overview_cols = _build_overview_columns(df)
 
     overview_df = df[overview_cols].copy()
-    overview_df = overview_df.sort_values(by="财务总分", ascending=False, na_position="last")
+    sort_col = "推荐分" if "推荐分" in df.columns else "财务总分"
+    overview_df = overview_df.sort_values(by=sort_col, ascending=False, na_position="last")
 
     overview_df.to_excel(writer, sheet_name="概览", index=False)
 
@@ -213,7 +228,8 @@ def _write_detail_sheet(df, writer):
     detail_cols = _build_detail_columns(df)
 
     detail_df = df[detail_cols].copy()
-    detail_df = detail_df.sort_values(by="财务总分", ascending=False, na_position="last")
+    sort_col = "推荐分" if "推荐分" in df.columns else "财务总分"
+    detail_df = detail_df.sort_values(by=sort_col, ascending=False, na_position="last")
 
     detail_df.to_excel(writer, sheet_name="详情", index=False)
 
@@ -235,11 +251,11 @@ def _build_overview_columns(df):
     if price_col:
         cols.append("现价")
 
-    for c in ["溢价率", "到期收益率", "评级"]:
+    for c in ["溢价率", "纯债价值", "评级"]:
         if c in df.columns:
             cols.append(c)
 
-    for c in ["排除项计数", "财务总分", "风险等级", "风险建议"]:
+    for c in ["排除项计数", "财务总分", "风险等级", "风险建议", "推荐分", "推荐等级", "推荐原因"]:
         if c in df.columns:
             cols.append(c)
 
@@ -264,14 +280,3 @@ def _col_idx_to_letter(i):
         result = chr(65 + i % 26) + result
         i //= 26
     return result
-
-
-def _find_col(df, candidates):
-    for col in candidates:
-        if col in df.columns:
-            return col
-    for col in candidates:
-        for df_col in df.columns:
-            if col in df_col:
-                return df_col
-    return None

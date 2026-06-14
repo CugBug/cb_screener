@@ -5,14 +5,15 @@
 
 实际 API 列名映射:
   bond_zh_hs_cov_spot: symbol, code, name, trade (现价)
-  bond_zh_cov: 债券代码, 债券简称, 正股代码, 正股价, 转股溢价率, 信用评级, 上市时间
-  stock_financial_abstract_ths: 报告期, 净利润, 基本每股收益, 每股经营现金流, 销售毛利率, 资产负债率
-  stock_financial_debt_ths: 报告期, 货币资金, 应收账款, 流动负债合计, 营业总收入
+  bond_zh_cov: 债券代码, 正股代码, 正股价, 转股溢价率, 信用评级, 上市时间
+  stock_financial_abstract_ths: 报告期, 净利润, 基本每股收益, 销售毛利率, 资产负债率
+  stock_financial_debt_ths: 报告期, 货币资金, 应收账款, 流动负债合计
   stock_gpzy_pledge_ratio_em: 股票代码, 质押比例
+  bond_cb_jsl: 代码, 剩余年限 (Jisilu 精确值)
 """
 
 import time
-from datetime import date, datetime
+from datetime import date
 
 import akshare as ak
 import pandas as pd
@@ -54,12 +55,12 @@ def fetch_all_bonds() -> pd.DataFrame:
 
     Returns columns:
         转债代码, 转债名称, 现价, 溢价率, 评级, 剩余年限,
-        正股代码, 正股价, 上市时间
+        纯债价值, 正股代码, 正股价
     """
     spot = _fetch_spot()
     detail = _fetch_detail()
 
-    # 标准化 spot 列名: code -> 转债代码, name -> 转债名称, trade -> 现价
+    # 标准化 spot 列名
     spot = spot.rename(columns={
         "code": "转债代码",
         "name": "转债名称",
@@ -76,8 +77,7 @@ def fetch_all_bonds() -> pd.DataFrame:
         "正股价": "正股价",
     })
 
-    # 计算剩余年限 (默认 6 年期转债)
-    # 上市时间 + 20天 ≈ 发行日期，部分补偿上市延迟
+    # 计算剩余年限 (默认 6 年期转债，上市时间 + 20天 ≈ 发行日期)
     if "上市时间" in detail.columns:
         today = date.today()
         detail["剩余年限"] = detail["上市时间"].apply(
@@ -111,18 +111,15 @@ def fetch_all_bonds() -> pd.DataFrame:
         if col in merged.columns:
             merged[col] = pd.to_numeric(merged[col], errors="coerce")
 
-    # 补充到期收益率 + 剩余年限（Jisilu 精确值覆盖估算值）
-    merged = _merge_jisilu_data(merged)
+    # 纯债价值在 Step 1.5 通过 bond_zh_cov_value_analysis() 逐只获取
+    merged["纯债价值"] = None
 
     print(f"  [数据] 合并后共 {len(merged)} 条记录\n")
     return merged
 
 
 def fetch_financial_abstract(stock_code: str) -> pd.DataFrame | None:
-    """stock_financial_abstract_ths(symbol) - 获取正股财务摘要
-
-    Returns columns: 报告期, 净利润, 基本每股收益, 每股经营现金流, 销售毛利率, 资产负债率
-    """
+    """stock_financial_abstract_ths(symbol) - 获取正股财务摘要"""
     try:
         df = ak.stock_financial_abstract_ths(symbol=stock_code)
         time.sleep(0.3)
@@ -133,10 +130,7 @@ def fetch_financial_abstract(stock_code: str) -> pd.DataFrame | None:
 
 
 def fetch_debt_report(stock_code: str) -> pd.DataFrame | None:
-    """stock_financial_debt_ths(symbol) - 获取资产负债表 (东方财富)
-
-    Returns columns: 报告期, 货币资金, 应收账款, 流动负债合计, 营业总收入
-    """
+    """stock_financial_debt_ths(symbol) - 获取资产负债表"""
     try:
         df = ak.stock_financial_debt_ths(symbol=stock_code)
         time.sleep(0.3)
@@ -147,10 +141,7 @@ def fetch_debt_report(stock_code: str) -> pd.DataFrame | None:
 
 
 def fetch_pledge_data() -> pd.DataFrame | None:
-    """获取并标准化质押比例数据
-
-    Returns columns: 股票代码, 质押比例
-    """
+    """获取并标准化质押比例数据"""
     df = _fetch_pledge_raw()
     if df is None:
         return None
@@ -160,63 +151,54 @@ def fetch_pledge_data() -> pd.DataFrame | None:
         "质押比例": "质押比例",
     })
 
-    # 标准化股票代码
     if "股票代码" in df.columns:
         df["股票代码"] = df["股票代码"].astype(str).str.strip().str.zfill(6)
 
     return df
 
 
-def fetch_jisilu_data() -> pd.DataFrame | None:
-    """bond_cb_jsl() - 集思录转债数据（含到期税前收益）
-
-    默认返回 30 条，需要 cookie 才能获取全量。
-    Returns columns: 代码, 到期税前收益, 剩余年限, 债券评级, ...
-    """
+def fetch_bond_value_analysis(bond_code: str) -> float | None:
+    """bond_zh_cov_value_analysis(symbol) - 获取单只转债最新纯债价值"""
     try:
-        df = ak.bond_cb_jsl()
-        print(f"  [数据] 集思录获取到 {len(df)} 条记录")
-        return df
+        df = ak.bond_zh_cov_value_analysis(symbol=bond_code)
+        time.sleep(0.3)
+        if df is None or df.empty or "纯债价值" not in df.columns:
+            return None
+        latest = df.sort_values(by="日期", ascending=False).iloc[0]
+        val = latest["纯债价值"]
+        return float(val) if pd.notna(val) else None
     except Exception as e:
-        print(f"    警告: 获取集思录数据失败 - {e}")
+        print(f"    警告: 获取 {bond_code} 纯债价值失败 - {e}")
         return None
 
 
-def _merge_jisilu_data(merged: pd.DataFrame) -> pd.DataFrame:
-    """将集思录的到期税前收益和剩余年限合并到主数据中
+def fetch_bond_summary_sina(bond_code: str) -> float | None:
+    """bond_cb_summary_sina(symbol) - 获取单只转债剩余年限 (新浪财经)
 
-    Jisilu 的剩余年限是精确值，优先覆盖估算值。
-    到期收益率同样来自 Jisilu。
+    需要带市场前缀: sh=D浠? sz=深市
+    Returns: 剩余年限 (float) 或 None
     """
-    merged["到期收益率"] = None
+    try:
+        if bond_code.startswith("11"):
+            symbol = f"sh{bond_code}"
+        elif bond_code.startswith("12"):
+            symbol = f"sz{bond_code}"
+        else:
+            return None
 
-    jsl = fetch_jisilu_data()
-    if jsl is None or jsl.empty:
-        return merged
+        df = ak.bond_cb_summary_sina(symbol=symbol)
+        time.sleep(0.3)
+        if df is None or df.empty:
+            return None
 
-    if "代码" not in jsl.columns:
-        return merged
-
-    code_col = jsl["代码"].astype(str).str.strip()
-    merged_code = merged["转债代码"].astype(str).str.strip()
-
-    # 到期收益率
-    if "到期税前收益" in jsl.columns:
-        ytm_map = dict(zip(code_col, pd.to_numeric(jsl["到期税前收益"], errors="coerce")))
-        merged["到期收益率"] = merged_code.map(ytm_map)
-        matched_ytm = merged["到期收益率"].notna().sum()
-        print(f"  [数据] 到期收益率匹配: {matched_ytm}/{len(merged)} 只")
-
-    # 剩余年限 — Jisilu 精确值覆盖估算值
-    if "剩余年限" in jsl.columns:
-        remain_map = dict(zip(code_col, pd.to_numeric(jsl["剩余年限"], errors="coerce")))
-        jsl_remain = merged_code.map(remain_map)
-        overwritten = (jsl_remain.notna() & merged["剩余年限"].notna()).sum()
-        filled = (jsl_remain.notna() & merged["剩余年限"].isna()).sum()
-        merged["剩余年限"] = jsl_remain.combine_first(merged["剩余年限"])
-        print(f"  [数据] 剩余年限(Jisilu): 覆盖 {overwritten} 只, 补充 {filled} 只")
-
-    return merged
+        remain_row = df[df["item"] == "剩余年限（年）"]
+        if remain_row.empty:
+            return None
+        val = remain_row.iloc[0]["value"]
+        return float(val) if pd.notna(val) and val != "--" else None
+    except Exception as e:
+        print(f"    警告: 获取 {bond_code} 剩余年限失败 - {e}")
+        return None
 
 
 def parse_financial_value(val) -> float | None:
