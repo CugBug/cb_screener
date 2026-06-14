@@ -33,10 +33,11 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 示例:
-  python main.py --mode rough              # 仅粗筛
-  python main.py --mode full               # 完整流程
-  python main.py --mode full --output both # 完整流程 + 控制台输出
-  python main.py --mode detail --codes 127061,113632  # 指定转债分析
+  .venv\\Scripts\\python main.py --mode rough              # 仅粗筛
+  .venv\\Scripts\\python main.py --mode full               # 完整流程
+  .venv\\Scripts\\python main.py --mode full --output both # 完整流程 + 控制台
+  .venv\\Scripts\\python main.py --mode full --codes 127061,113632  # 完整流程+额外关注
+  .venv\\Scripts\\python main.py --mode detail --codes 127061,113632  # 仅指定转债
         """,
     )
     parser.add_argument(
@@ -55,7 +56,7 @@ def main():
         "--codes",
         type=str,
         default="",
-        help="指定转债代码，逗号分隔 (用于 detail 模式)",
+        help="额外关注的转债代码，逗号分隔 (full 模式: 额外纳入; detail 模式: 仅分析这些)",
     )
     args = parser.parse_args()
 
@@ -121,6 +122,23 @@ def _run_full_mode(args):
 
     # Step 1: 粗筛
     candidates = rough_filter(df)
+
+    # 额外关注: --codes 指定的转债无论是否通过粗筛都纳入分析
+    watched_codes = []
+    if getattr(args, "codes", "") and args.codes.strip():
+        watched_codes = [c.strip() for c in args.codes.split(",") if c.strip()]
+        df_code_col = "转债代码"
+        df[df_code_col] = df[df_code_col].astype(str)
+        watched_df = df[df[df_code_col].isin(watched_codes)].copy()
+        if not watched_df.empty:
+            # 去重合并
+            existing = set(candidates["转债代码"].astype(str))
+            new_bonds = watched_df[~watched_df["转债代码"].astype(str).isin(existing)]
+            if not new_bonds.empty:
+                candidates = pd.concat([candidates, new_bonds], ignore_index=True)
+                print(f"  [关注] 额外加入 {len(new_bonds)} 只指定转债: {list(new_bonds['转债代码'])}")
+        else:
+            print(f"  [关注] 未找到指定转债: {watched_codes}")
 
     if len(candidates) == 0:
         print("无候选转债，流程结束")

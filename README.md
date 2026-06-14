@@ -118,16 +118,19 @@ pip install -r requirements.txt
 
 ```bash
 # 完整流程（粗筛 + 排除项 + 财务评分 + 投资推荐），输出 Excel
-python main.py --mode full --output excel
+.venv\Scripts\python main.py --mode full --output excel
 
 # 仅粗筛
-python main.py --mode rough --output console
+.venv\Scripts\python main.py --mode rough --output console
 
 # 完整流程 + 控制台输出
-python main.py --mode full --output both
+.venv\Scripts\python main.py --mode full --output both
 
 # 指定转债分析
-python main.py --mode detail --codes 127061,113632
+.venv\Scripts\python main.py --mode detail --codes 127061,113632
+
+# 完整流程 + 额外关注指定转债（无论是否通过粗筛都会纳入分析）
+.venv\Scripts\python main.py --mode full --output excel --codes 127061,127056,118031
 ```
 
 ### 配置参数
